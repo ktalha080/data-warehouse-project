@@ -1,0 +1,79 @@
+--PART-TO-WHOLE ANALYSIS
+
+--Which category contribute most to the overall sales?
+
+WITH category_sales as (
+SELECT
+p.category,
+sum(s.sales_amount) as total_sales
+FROM gold.fact_sales s
+LEFT JOIN gold.dim_products p
+on s.product_key = p.product_key
+GROUP BY p.category)
+
+SELECT
+category,
+total_sales,
+SUM(total_sales) OVER() as overall_sales,
+concat(ROUND((cast(total_sales as float)/SUM(total_sales) OVER()) *100, 2), '%') AS percentage_of_total
+FROM category_sales
+ORDER BY total_sales DESC
+
+--DATA SEGMENTATION--
+
+/*Segment products into cost rangesand 
+count how many products fall into each segment*/
+
+WITH product_segment AS (
+SELECT
+product_key,
+product_name,
+cost,
+case when cost <=100 then 'Below 100'
+     when cost between 100 and 500 then '100-500'
+     when cost between 500 and 1000 then '500-1000'
+     else 'Above 1000'
+end as cost_range
+FROM gold.dim_products)
+
+SELECT
+cost_range,
+COUNT(product_key) as total_products
+FROM product_segment
+GROUP BY cost_range
+ORDER BY total_products DESC
+
+/* Group cusotmers into 3 segments based on their spending behaviour
+  -VIP: Customers with atleast 12 months of history and spending more than $5000.
+  -Regular: Customers with atleast 12 months of history and spending $5000 or less.
+  -New: Customers with lifespan less than 12 months
+*/
+
+WITH customer_spending AS (
+SELECT
+c.customer_key,
+sum(s.sales_amount) as total_sales,
+MIN(order_date) as first_order,
+MAX(order_date) as last_order,
+DATEDIFF(MONTH, MIN(order_date), MAX(order_date)) lifespan
+FROM gold.fact_sales s
+LEFT JOIN gold.dim_customers c
+ON s.customer_key = c.customer_key
+GROUP BY c.customer_key),
+
+customer_segments AS (
+SELECT
+customer_key,
+total_sales,
+lifespan,
+case when total_sales > '5000' and lifespan >= 12 then 'VIP'
+     when total_sales <= '5000' and lifespan >= 12 then 'Regular'
+    else 'New'
+end as Cust_segment
+FROM customer_spending)
+
+SELECT
+COUNT(customer_key) as total_customers,
+cust_segment
+FROM customer_segments
+GROUP BY Cust_segment

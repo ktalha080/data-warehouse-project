@@ -1,0 +1,77 @@
+--DATA ANALYTICS PROJECT    
+
+--For amount of sales over the years
+SELECT
+    YEAR(order_date) as order_year,
+    sum(sales_amount) as total_sales,
+    COUNT(distinct customer_key) as total_customers,
+    SUM(quantity) as total_quantity
+FROM gold.fact_sales
+WHERE order_date is not null
+GROUP BY YEAR(order_date)
+ORDER BY YEAR(order_date)
+
+--For total sales, customers and qauntity sold for each month of the business
+
+SELECT
+    DATETRUNC(MONTH, order_date) as order_year,
+    sum(sales_amount) as total_sales,
+    COUNT(distinct customer_key) as total_customers,
+    SUM(quantity) as total_quantity
+FROM gold.fact_sales
+WHERE order_date is not null
+GROUP BY DATETRUNC(MONTH, order_date)
+ORDER BY DATETRUNC(MONTH, order_date)
+
+--Calculate the total sales per month 
+--and the running total of the sales over time
+--and the moving avg sales overtime
+select
+    order_date,
+    total_sales,
+    sum(total_sales) over(order by order_date) as running_total_sales,
+    AVG(avg_price) over(order by order_date) as moving_avg_sales
+from
+(
+    SELECT
+        datetrunc(month,order_date) as order_date,
+        SUM(sales_amount) as total_sales,
+        AVG(price) as avg_price
+    FROM gold.fact_sales
+    WHERE order_date is NOT NULL
+    GROUP BY datetrunc(month,order_date)
+)t
+
+/* Analyze the yearly performance of products by comparing their sales
+to both the avg sales performance of the product and the previous years sales */
+
+WITH yearly_product_sales AS(
+SELECT
+    p.product_name,
+    year(s.order_date) as order_year,
+    sum(s.sales_amount) as total_sales
+FROM gold.fact_sales s
+LEFT JOIN gold.dim_products p
+on s.product_key = p.product_key
+WHERE order_date is NOT NULL
+group by year(s.order_date), p.product_name
+)
+SELECT
+    order_year,
+    product_name,
+    total_sales,
+    AVG(total_sales) OVER(partition by product_name) avg_sales,
+    total_sales - AVG(total_sales) OVER(partition by product_name) as avg_diff,
+    case when total_sales - AVG(total_sales) OVER(partition by product_name) > 0 then 'Above avg'
+        when total_sales - AVG(total_sales) OVER(partition by product_name) < 0 then 'Below avg'
+        else 'Avg'
+    end as avg_change,
+        --Year over year Analysis
+    LAG(total_sales) OVER(PARTITION BY product_name ORDER BY order_year) as py_sales,
+    total_sales - LAG(total_sales) OVER(PARTITION BY product_name ORDER BY order_year) as py_diff,
+    case when total_sales - LAG(total_sales) OVER(PARTITION BY product_name ORDER BY order_year) > 0 then 'Increase'
+        when total_sales - LAG(total_sales) OVER(PARTITION BY product_name ORDER BY order_year) < 0 then 'Decreade'
+        else 'No change'
+    end as avg_change
+from yearly_product_sales
+ORDER BY product_name, order_year

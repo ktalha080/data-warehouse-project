@@ -1,0 +1,56 @@
+--RANKING ANALYSIS
+
+--Which 5 products generate the highest revenue
+
+SELECT top 5
+p.product_name,
+sum(s.sales_amount) as total_revenue
+from gold.fact_sales s
+LEFT JOIN gold.dim_products p
+ON p.product_key=s.product_key
+GROUP BY p.product_name
+order by total_revenue DESC
+
+--using window functions
+SELECT*
+FROM(
+select
+p.product_name,
+sum(s.sales_amount) as total_revenue,
+ROW_NUMBER() OVER(order by sum (s.sales_amount) DESC) as ranking
+from gold.fact_sales s
+LEFT JOIN gold.dim_products p
+ON p.product_key=s.product_key
+GROUP BY p.product_name
+)t where ranking <= 5 
+
+--Find the top 10 customers who have generated the highest revenue
+SELECT top 10
+c.customer_key,
+c.first_name,
+c.last_name,
+sum(s.sales_amount) as total_revenue
+from gold.fact_sales s
+LEFT JOIN gold.dim_customers c
+ON c.customer_key=s.customer_key
+GROUP BY 
+c.customer_key,
+c.first_name,
+c.last_name
+order by total_revenue DESC
+
+--3 customers with the fewer orders placed
+ 
+SELECT top 3
+c.customer_key,
+c.first_name,
+c.last_name,
+COUNT(distinct order_number) as total_orders
+from gold.fact_sales s
+LEFT JOIN gold.dim_customers c
+ON c.customer_key=s.customer_key
+GROUP BY 
+c.customer_key,
+c.first_name,
+c.last_name
+order by total_orders 

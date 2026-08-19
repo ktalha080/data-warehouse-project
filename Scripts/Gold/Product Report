@@ -1,0 +1,96 @@
+--product report--
+/*
+==============================================================================================
+Purpose:
+    This report consolidates key product metrics and behaviours.
+Highlights:
+    1. Gather essential fields such as product name, category, subcategory and cost.
+    2. Segment products by revenue to identify High-Performers, Mid Range and Low-Performers.
+    3. Aggregate Porduct level metrics
+            -Total Orders
+            -Total sales
+            -Total quantity sold
+            -total customers (unique)
+            -lifespan (in months)
+    4. Calculate valuable KIPs:
+            -Recency (month since lasts sale)
+            -average order revenue
+            -avergae monthly evenue
+==============================================================================================
+*/
+
+CREATE view gold.report_products AS
+with base_query as(
+--Base query: Retrieves core columns from fact_sales and dim_products
+SELECT
+s.order_number,
+s.order_date,
+s.customer_key,
+s.sales_amount,
+s.quantity,
+p.product_key,
+p.product_name,
+p.category,
+p.subcategory,
+p.cost
+FROM gold.fact_sales s
+LEFT JOIN gold.dim_products p
+ON s.product_key=p.product_key
+WHERE order_date is NOT NULL --only consider valid sales dates
+),
+
+product_aggregation as (
+--Product aggregation summarizes key metrics at the product level
+SELECT
+product_key,
+product_name,
+category,
+subcategory,
+cost,
+DATEDIFF(MONTH, MIN(order_date), MAX(order_date)) as lifespan,
+MAX(order_date) as last_sale_date,
+COUNT(DISTINCT order_number) as total_orders,
+COUNT(DISTINCT customer_key) as total_customers,
+SUM(sales_amount) as total_sales,
+SUM(quantity) as total_quantity,
+ROUND(AVG(CAST(sales_amount as FLOAT)/NULLIF(quantity, 0)), 1) as avg_selling_price
+FROM base_query
+GROUP BY
+product_key,
+product_name,
+category,
+subcategory,
+cost
+)
+
+--Final query: Combines all product results into one output
+
+SELECT
+product_key,
+product_name,
+category,
+subcategory,
+cost,
+DATEDIFF(MONTH, last_sale_date, GETDATE()) as recency_in_months,
+CASE 
+    WHEN total_sales>50000 THEN 'High-Performers'
+    WHEN total_sales>=10000 THEN 'Mid-Range'
+    ELSE 'Low-Performers'
+End as Product_segment,
+lifespan,
+last_sale_date,
+total_orders,
+total_customers,
+total_sales,
+total_quantity,
+avg_selling_price,
+--AVG order revenue
+Case
+    when total_orders=0 then 0
+    else total_sales/total_orders
+END as avg_order_revenue,
+--AVG Monthly Sales
+case when lifespan = 0 then total_sales
+     else total_sales/lifespan
+end as  avg_monthly_revenue
+FROM product_aggregation
